@@ -41,25 +41,46 @@ App Claude ──► serveurs Anthropic ──► tunnel Cloudflare ──► Te
    ./install.sh
    ```
 
-## Démarrage
+## URL fixe avec ngrok (une seule fois)
+
+1. Crée un compte gratuit sur https://ngrok.com.
+2. Dans Termux :
+   ```bash
+   cd ~/test_agent/phone_mcp && ./setup_ngrok.sh
+   ```
+   Le script installe ngrok, puis te demande ton **authtoken**
+   (https://dashboard.ngrok.com/get-started/your-authtoken) et ton **domaine
+   gratuit** (https://dashboard.ngrok.com/domains, du type `xxx.ngrok-free.app`).
+
+Sans ngrok, `start.sh` utilise un tunnel Cloudflare temporaire, dont l'URL change
+à chaque démarrage.
+
+## Démarrage automatique avec le téléphone (une seule fois)
+
+1. Installe **Termux:Boot** depuis F-Droid et ouvre-la une fois.
+2. Dans Termux :
+   ```bash
+   cd ~/test_agent/phone_mcp && ./enable_boot.sh
+   ```
+3. Sur les téléphones Realme, Oppo, Xiaomi, etc. : dans les paramètres Android,
+   autorise **Termux** et **Termux:Boot** à démarrer automatiquement et à tourner
+   en arrière-plan (réglages de batterie).
+
+Le service démarre alors tout seul à chaque allumage du téléphone. Il reste en
+veille sans rien faire jusqu'à ce que Claude l'appelle.
+
+## Utilisation
 
 ```bash
-cd ~/test_agent/phone_mcp
-./start.sh
-```
-
-Le script affiche une URL de la forme :
-
-```
-https://xxxx-xxxx.trycloudflare.com/<jeton-secret>/mcp
+./start.sh   # démarre le service (ou affiche l'URL s'il tourne déjà)
+./stop.sh    # l'arrête (par exemple avant une mise à jour avec git pull)
 ```
 
 Sur **claude.ai** (depuis un navigateur) : **Paramètres > Connecteurs > Ajouter
-un connecteur personnalisé**, colle l'URL et valide. Le connecteur est ensuite
-disponible dans l'app mobile. Active-le dans une conversation via le menu des
-outils, puis demande par exemple « lance la dernière vidéo de Squeezie ».
-
-Laisse Termux ouvert en arrière-plan (la notification Termux doit rester visible).
+un connecteur personnalisé**, colle l'URL affichée par `start.sh` (laisse OAuth
+vide) et valide. Avec ngrok, c'est à faire une seule fois. Le connecteur est
+ensuite disponible dans l'app mobile : active-le dans une conversation via le
+menu des outils, puis demande par exemple « lance la dernière vidéo de Squeezie ».
 
 ## Pour que ce soit fluide
 
@@ -67,17 +88,16 @@ Laisse Termux ouvert en arrière-plan (la notification Termux doit rester visibl
   Connecteurs, ouvre ton connecteur et règle chaque outil sur « Toujours
   autoriser ». Tu peux aussi choisir « Toujours autoriser » directement dans la
   fenêtre de demande pendant une conversation.
-- **Après un redémarrage de `start.sh`** : mets à jour l'URL du connecteur.
+- **Parle-lui avec la dictée** (le micro dans la zone de saisie) plutôt qu'avec
+  le mode vocal : il n'écoutera pas de nouveau après avoir lancé la vidéo.
 
 ## À savoir
 
-- **L'URL change à chaque redémarrage de `start.sh`** : c'est le cas du tunnel
-  Cloudflare gratuit « rapide ». Il faut alors modifier l'URL du connecteur dans
-  claude.ai. Pour une URL fixe, il faut un tunnel Cloudflare nommé, ce qui demande
-  un compte Cloudflare gratuit et un nom de domaine.
+- **Le tunnel se relance tout seul** s'il tombe (perte de réseau…). Journal du
+  service démarré automatiquement : `~/.config/phone-mcp/service.log`.
 - **Sécurité** : l'URL contient un jeton secret aléatoire (stocké dans
   `~/.config/phone-mcp/token`). Ne la partage pas. Si elle fuite, supprime ce
-  fichier puis relance `start.sh` pour générer un nouveau jeton.
+  fichier puis relance le service (`./stop.sh` puis `./start.sh`) pour générer un nouveau jeton.
   Le serveur n'accepte que les liens `http`, `https` et `geo:`, et ne peut ni
   appeler, ni envoyer de SMS, ni lire tes données.
 - La recherche YouTube lit la page de résultats publique, sans clé d'API. Si
