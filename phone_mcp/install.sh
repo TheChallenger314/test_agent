@@ -13,4 +13,4 @@ echo "  2. Autoriser Termux à « Afficher par-dessus les autres applis »"
 echo "     (Paramètres Android > Applis > Termux)."
 echo "  3. Désactiver l'optimisation de batterie pour Termux."
 echo
-echo "Ensuite : ./start.sh"
+echo "Ensuite : ./setup_ngrok.sh (URL fixe), ./enable_boot.sh (démarrage auto), puis ./start.sh"
