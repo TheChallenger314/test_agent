@@ -15,6 +15,8 @@ Variables d'environnement :
     PHONE_MCP_DRY_RUN si "1", n'exécute aucune commande Android (tests)
 """
 
+import gzip
+import html as html_lib
 import json
 import os
 import re
@@ -107,22 +109,31 @@ def extract_youtube_id(text):
     return candidate if YOUTUBE_ID_RE.match(candidate) else None
 
 
-def fetch_search_page(query):
-    url = "https://www.youtube.com/results?" + urllib.parse.urlencode(
-        {"search_query": query}
-    )
+def fetch_youtube(url):
     req = urllib.request.Request(
         url,
         headers={
             "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
             "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+            # Page compressée : ~5 fois moins de données à télécharger.
+            "Accept-Encoding": "gzip",
             # Évite la page de consentement cookies servie en Europe.
             "Cookie": "SOCS=CAI; CONSENT=YES+1",
         },
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
-        return resp.read().decode("utf-8", errors="replace")
+        raw = resp.read()
+        if resp.headers.get("Content-Encoding") == "gzip":
+            raw = gzip.decompress(raw)
+        return raw.decode("utf-8", errors="replace")
+
+
+def fetch_search_page(query, filter_param=None):
+    params = {"search_query": query}
+    if filter_param:
+        params["sp"] = filter_param
+    return fetch_youtube("https://www.youtube.com/results?" + urllib.parse.urlencode(params))
 
 
 def _text(node):
@@ -169,6 +180,65 @@ def parse_search_results(html, max_results):
     return results
 
 
+def find_renderers(html, key):
+    """Renvoie, dans l'ordre de la page, les objets `key` de ytInitialData."""
+    match = re.search(r"var ytInitialData\s*=\s*(\{.*?\});\s*</script>", html, re.S)
+    if not match:
+        return []
+    try:
+        stack = [json.loads(match.group(1))]
+    except json.JSONDecodeError:
+        return []
+    found = []
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            if isinstance(node.get(key), dict):
+                found.append(node[key])
+            stack.extend(reversed(list(node.values())))
+        elif isinstance(node, list):
+            stack.extend(reversed(node))
+    return found
+
+
+CHANNEL_FILTER = "EgIQAg=="  # filtre de recherche YouTube « Chaînes »
+
+
+def parse_latest_from_feed(xml):
+    """Première entrée (la plus récente) du flux RSS d'une chaîne."""
+    entry = re.search(r"<entry>(.*?)</entry>", xml, re.S)
+    if not entry:
+        return None
+    vid = re.search(r"<yt:videoId>([A-Za-z0-9_-]{11})</yt:videoId>", entry.group(1))
+    title = re.search(r"<title>(.*?)</title>", entry.group(1), re.S)
+    if not vid:
+        return None
+    return {"id": vid.group(1),
+            "title": html_lib.unescape(title.group(1)) if title else ""}
+
+
+def latest_video_of_channel(channel):
+    try:
+        page = fetch_search_page(channel, CHANNEL_FILTER)
+    except Exception as e:
+        raise ToolError(f"Recherche de la chaîne impossible : {e}")
+    channels = [c for c in find_renderers(page, "channelRenderer") if c.get("channelId")]
+    if not channels:
+        raise ToolError(f"Aucune chaîne trouvée pour « {channel} ».")
+    chan = channels[0]
+    try:
+        feed = fetch_youtube(
+            "https://www.youtube.com/feeds/videos.xml?channel_id=" + chan["channelId"]
+        )
+    except Exception as e:
+        raise ToolError(f"Lecture du flux de la chaîne impossible : {e}")
+    video = parse_latest_from_feed(feed)
+    if not video:
+        raise ToolError(f"Aucune vidéo trouvée sur la chaîne « {_text(chan.get('title'))} ».")
+    video["channel"] = _text(chan.get("title"))
+    return video
+
+
 def search_youtube(query, max_results):
     try:
         html = fetch_search_page(query)
@@ -205,6 +275,15 @@ def tool_youtube_play(args):
         video_id, label = video["id"], describe(video)
     open_on_phone(f"https://www.youtube.com/watch?v={video_id}")
     return f"Lecture lancée sur le téléphone : {label}"
+
+
+def tool_youtube_play_latest(args):
+    channel = str(args.get("channel", "")).strip()
+    if not channel:
+        raise ToolError("Paramètre « channel » manquant.")
+    video = latest_video_of_channel(channel)
+    open_on_phone(f"https://www.youtube.com/watch?v={video['id']}")
+    return f"Lecture lancée : {video['title']} — {video['channel']}"
 
 
 def tool_youtube_search(args):
@@ -271,6 +350,23 @@ TOOLS = {
                 }
             },
             "required": ["query"],
+        },
+    },
+    "youtube_play_latest": {
+        "handler": tool_youtube_play_latest,
+        "description": (
+            "Lance sur le téléphone la vidéo la plus récente d'une chaîne YouTube "
+            "(ex. « la dernière vidéo d'Adam Savage »). Un seul appel suffit."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string",
+                    "description": "Nom de la chaîne ou du créateur.",
+                }
+            },
+            "required": ["channel"],
         },
     },
     "youtube_search": {
@@ -359,7 +455,10 @@ def handle_message(msg):
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
             "instructions": (
                 "Ces outils agissent sur le téléphone Android de l'utilisateur. "
-                "Pour « mets/lance une vidéo », utilise youtube_play."
+                "Agis immédiatement, en un seul appel, sans demander de "
+                "confirmation ni chercher d'abord : « mets/lance une vidéo de X » "
+                "→ youtube_play ; « la dernière vidéo de X » → "
+                "youtube_play_latest. Réponds ensuite en une phrase très courte."
             ),
         }
     elif method == "ping":

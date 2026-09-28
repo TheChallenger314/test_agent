@@ -29,6 +29,16 @@ FAKE_SEARCH_PAGE = """<html><script>var ytInitialData = {"contents": {"sectionLi
 ]}}};</script></html>"""
 
 
+FAKE_CHANNEL_PAGE = """<script>var ytInitialData = {"contents": [
+  {"channelRenderer": {"channelId": "UCiDJtJKMICpb9B1qf7qjEOA",
+    "title": {"simpleText": "Adam Savage’s Tested"}}}
+]};</script>"""
+
+FAKE_FEED = """<feed><title>Adam Savage's Tested</title>
+<entry><yt:videoId>AAAAAAAAAAA</yt:videoId><title>Adam&#39;s Newest Build</title></entry>
+<entry><yt:videoId>BBBBBBBBBBB</yt:videoId><title>Older</title></entry></feed>"""
+
+
 class ServerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -82,7 +92,7 @@ class ServerTest(unittest.TestCase):
 
         status, resp = self.post({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         names = {t["name"] for t in resp["result"]["tools"]}
-        self.assertEqual(names, {"youtube_play", "youtube_search", "open_url", "set_volume"})
+        self.assertEqual(names, {"youtube_play", "youtube_play_latest", "youtube_search", "open_url", "set_volume"})
 
     def test_youtube_play_with_link_opens_video(self):
         result = self.call("youtube_play", {"query": "https://youtu.be/dQw4w9WgXcQ?t=3"})
@@ -103,6 +113,20 @@ class ServerTest(unittest.TestCase):
         self.assertIn("1. lofi hip hop radio — Lofi Girl (LIVE) [id: jfKfPfyJRdk]", text)
         self.assertIn("2. beats to sleep", text)
         self.assertEqual(server.dry_run_log, [])  # la recherche ne lance rien
+
+    def test_youtube_play_latest_plays_newest_channel_video(self):
+        def fake_fetch(url):
+            if "feeds/videos.xml" in url:
+                self.assertIn("channel_id=UCiDJtJKMICpb9B1qf7qjEOA", url)
+                return FAKE_FEED
+            self.assertIn("sp=EgIQAg", url)
+            return FAKE_CHANNEL_PAGE
+
+        with mock.patch.object(server, "fetch_youtube", side_effect=fake_fetch):
+            result = self.call("youtube_play_latest", {"channel": "Adam Savage"})
+        self.assertFalse(result["isError"])
+        self.assertIn("Adam's Newest Build", result["content"][0]["text"])
+        self.assertEqual(server.dry_run_log[0][-1], "https://www.youtube.com/watch?v=AAAAAAAAAAA")
 
     def test_open_url_rejects_other_schemes(self):
         result = self.call("open_url", {"url": "tel:0600000000"})

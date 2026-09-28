@@ -20,6 +20,7 @@ App Claude ──► serveurs Anthropic ──► tunnel Cloudflare ──► Te
 | Outil            | Effet                                                                 |
 |------------------|-----------------------------------------------------------------------|
 | `youtube_play`   | Lance une vidéo (recherche → 1er résultat, ou lien/ID YouTube)        |
+| `youtube_play_latest` | Lance la dernière vidéo d'une chaîne (« la dernière vidéo d'Adam Savage ») |
 | `youtube_search` | Liste des résultats sans rien lancer, pour que Claude choisisse       |
 | `open_url`       | Ouvre une URL `http(s)` ou `geo:` (Maps) avec l'appli adaptée         |
 | `set_volume`     | Règle le volume média en % (nécessite Termux:API)                     |
@@ -59,6 +60,14 @@ disponible dans l'app mobile. Active-le dans une conversation via le menu des
 outils, puis demande par exemple « lance la dernière vidéo de Squeezie ».
 
 Laisse Termux ouvert en arrière-plan (la notification Termux doit rester visible).
+
+## Pour que ce soit fluide
+
+- **Ne plus devoir autoriser à chaque fois** : sur claude.ai, dans Paramètres >
+  Connecteurs, ouvre ton connecteur et règle chaque outil sur « Toujours
+  autoriser ». Tu peux aussi choisir « Toujours autoriser » directement dans la
+  fenêtre de demande pendant une conversation.
+- **Après un redémarrage de `start.sh`** : mets à jour l'URL du connecteur.
 
 ## À savoir
 
